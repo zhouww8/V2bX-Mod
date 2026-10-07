@@ -1,6 +1,6 @@
 diff -ruN a/protocol/anytls/anytls_user.go b/protocol/anytls/anytls_user.go
 --- a/protocol/anytls/anytls_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/anytls/anytls_user.go	2026-10-07 10:31:25.169806653 +0800
++++ b/protocol/anytls/anytls_user.go	2026-10-07 17:27:33.304296438 +0800
 @@ -0,0 +1,53 @@
 +package anytls
 +
@@ -56,8 +56,8 @@ diff -ruN a/protocol/anytls/anytls_user.go b/protocol/anytls/anytls_user.go
 +	return nil
 +}
 diff -ruN a/protocol/anytls/inbound.go b/protocol/anytls/inbound.go
---- a/protocol/anytls/inbound.go	2026-10-07 10:31:24.328492689 +0800
-+++ b/protocol/anytls/inbound.go	2026-10-07 10:31:25.164809497 +0800
+--- a/protocol/anytls/inbound.go	2026-10-07 17:27:32.511649393 +0800
++++ b/protocol/anytls/inbound.go	2026-10-07 17:27:33.301771907 +0800
 @@ -4,6 +4,7 @@
  	"context"
  	"net"
@@ -88,7 +88,7 @@ diff -ruN a/protocol/anytls/inbound.go b/protocol/anytls/inbound.go
  		N.CloseOnHandshakeFailure(conn, onClose, err)
 diff -ruN a/protocol/hysteria/hysteria_user.go b/protocol/hysteria/hysteria_user.go
 --- a/protocol/hysteria/hysteria_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/hysteria/hysteria_user.go	2026-10-07 10:31:25.206418411 +0800
++++ b/protocol/hysteria/hysteria_user.go	2026-10-07 17:27:33.327758412 +0800
 @@ -0,0 +1,37 @@
 +package hysteria
 +
@@ -129,7 +129,7 @@ diff -ruN a/protocol/hysteria/hysteria_user.go b/protocol/hysteria/hysteria_user
 +}
 diff -ruN a/protocol/hysteria2/hysteria2_user.go b/protocol/hysteria2/hysteria2_user.go
 --- a/protocol/hysteria2/hysteria2_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/hysteria2/hysteria2_user.go	2026-10-07 10:31:25.215520253 +0800
++++ b/protocol/hysteria2/hysteria2_user.go	2026-10-07 17:27:33.333418229 +0800
 @@ -0,0 +1,58 @@
 +package hysteria2
 +
@@ -190,8 +190,8 @@ diff -ruN a/protocol/hysteria2/hysteria2_user.go b/protocol/hysteria2/hysteria2_
 +	return nil
 +}
 diff -ruN a/protocol/hysteria2/inbound.go b/protocol/hysteria2/inbound.go
---- a/protocol/hysteria2/inbound.go	2026-10-07 10:31:24.360057706 +0800
-+++ b/protocol/hysteria2/inbound.go	2026-10-07 10:31:25.207643959 +0800
+--- a/protocol/hysteria2/inbound.go	2026-10-07 17:27:32.546512214 +0800
++++ b/protocol/hysteria2/inbound.go	2026-10-07 17:27:33.333462726 +0800
 @@ -8,6 +8,7 @@
  	"net/netip"
  	"net/url"
@@ -220,9 +220,27 @@ diff -ruN a/protocol/hysteria2/inbound.go b/protocol/hysteria2/inbound.go
  	return inbound, nil
  }
  
+@@ -238,7 +245,7 @@
+ 	metadata.Destination = destination
+ 	h.logger.InfoContext(ctx, "inbound connection from ", metadata.Source)
+ 	userID, _ := auth.UserFromContext[int](ctx)
+-	if userName := h.userNameList[userID]; userName != "" {
++	if userName, found := h.uidToUuid[userID]; found && userName != "" {
+ 		metadata.User = userName
+ 		h.logger.InfoContext(ctx, "[", userName, "] inbound connection to ", metadata.Destination)
+ 	} else {
+@@ -260,7 +267,7 @@
+ 	metadata.Destination = destination
+ 	h.logger.InfoContext(ctx, "inbound packet connection from ", metadata.Source)
+ 	userID, _ := auth.UserFromContext[int](ctx)
+-	if userName := h.userNameList[userID]; userName != "" {
++	if userName, found := h.uidToUuid[userID]; found && userName != "" {
+ 		metadata.User = userName
+ 		h.logger.InfoContext(ctx, "[", userName, "] inbound packet connection to ", metadata.Destination)
+ 	} else {
 diff -ruN a/protocol/shadowsocks/shadowsocks_user.go b/protocol/shadowsocks/shadowsocks_user.go
 --- a/protocol/shadowsocks/shadowsocks_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/shadowsocks/shadowsocks_user.go	2026-10-07 10:31:25.242753212 +0800
++++ b/protocol/shadowsocks/shadowsocks_user.go	2026-10-07 17:27:33.353945036 +0800
 @@ -0,0 +1,35 @@
 +package shadowsocks
 +
@@ -260,8 +278,8 @@ diff -ruN a/protocol/shadowsocks/shadowsocks_user.go b/protocol/shadowsocks/shad
 +	return err
 +}
 diff -ruN a/protocol/trojan/inbound.go b/protocol/trojan/inbound.go
---- a/protocol/trojan/inbound.go	2026-10-07 10:31:24.421023394 +0800
-+++ b/protocol/trojan/inbound.go	2026-10-07 10:31:25.280628185 +0800
+--- a/protocol/trojan/inbound.go	2026-10-07 17:27:32.593504716 +0800
++++ b/protocol/trojan/inbound.go	2026-10-07 17:27:33.374541248 +0800
 @@ -4,6 +4,7 @@
  	"context"
  	"net"
@@ -291,7 +309,7 @@ diff -ruN a/protocol/trojan/inbound.go b/protocol/trojan/inbound.go
  		N.CloseOnHandshakeFailure(conn, onClose, err)
 diff -ruN a/protocol/trojan/trojan_user.go b/protocol/trojan/trojan_user.go
 --- a/protocol/trojan/trojan_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/trojan/trojan_user.go	2026-10-07 10:31:25.282240593 +0800
++++ b/protocol/trojan/trojan_user.go	2026-10-07 17:27:33.376004485 +0800
 @@ -0,0 +1,44 @@
 +package trojan
 +
@@ -338,8 +356,8 @@ diff -ruN a/protocol/trojan/trojan_user.go b/protocol/trojan/trojan_user.go
 +	return err
 +}
 diff -ruN a/protocol/tuic/inbound.go b/protocol/tuic/inbound.go
---- a/protocol/tuic/inbound.go	2026-10-07 10:31:24.422492688 +0800
-+++ b/protocol/tuic/inbound.go	2026-10-07 10:31:25.283712010 +0800
+--- a/protocol/tuic/inbound.go	2026-10-07 17:27:32.595504716 +0800
++++ b/protocol/tuic/inbound.go	2026-10-07 17:27:33.376069072 +0800
 @@ -3,6 +3,7 @@
  import (
  	"context"
@@ -421,7 +439,7 @@ diff -ruN a/protocol/tuic/inbound.go b/protocol/tuic/inbound.go
  	}
 diff -ruN a/protocol/tuic/tuic_user.go b/protocol/tuic/tuic_user.go
 --- a/protocol/tuic/tuic_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/tuic/tuic_user.go	2026-10-07 10:31:25.285563678 +0800
++++ b/protocol/tuic/tuic_user.go	2026-10-07 17:27:33.377422764 +0800
 @@ -0,0 +1,66 @@
 +package tuic
 +
@@ -490,8 +508,8 @@ diff -ruN a/protocol/tuic/tuic_user.go b/protocol/tuic/tuic_user.go
 +	return nil
 +}
 diff -ruN a/protocol/vless/inbound.go b/protocol/vless/inbound.go
---- a/protocol/vless/inbound.go	2026-10-07 10:31:24.426874210 +0800
-+++ b/protocol/vless/inbound.go	2026-10-07 10:31:25.289087984 +0800
+--- a/protocol/vless/inbound.go	2026-10-07 17:27:32.599504716 +0800
++++ b/protocol/vless/inbound.go	2026-10-07 17:27:33.378852160 +0800
 @@ -4,6 +4,7 @@
  	"context"
  	"net"
@@ -521,7 +539,7 @@ diff -ruN a/protocol/vless/inbound.go b/protocol/vless/inbound.go
  		N.CloseOnHandshakeFailure(conn, onClose, err)
 diff -ruN a/protocol/vless/vless_user.go b/protocol/vless/vless_user.go
 --- a/protocol/vless/vless_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/vless/vless_user.go	2026-10-07 10:31:25.290979371 +0800
++++ b/protocol/vless/vless_user.go	2026-10-07 17:27:33.380033474 +0800
 @@ -0,0 +1,56 @@
 +package vless
 +
@@ -581,7 +599,7 @@ diff -ruN a/protocol/vless/vless_user.go b/protocol/vless/vless_user.go
 +}
 diff -ruN a/protocol/vmess/vmess_user.go b/protocol/vmess/vmess_user.go
 --- a/protocol/vmess/vmess_user.go	1970-01-01 08:00:00.000000000 +0800
-+++ b/protocol/vmess/vmess_user.go	2026-10-07 10:31:25.295366322 +0800
++++ b/protocol/vmess/vmess_user.go	2026-10-07 17:27:33.384204656 +0800
 @@ -0,0 +1,51 @@
 +package vmess
 +
