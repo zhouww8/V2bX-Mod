@@ -1,0 +1,3 @@
+# Vendored upstream sources are NOT committed (too large).
+# Run ./vendor-singbox.sh to fetch + patch locally before building.
+sing-box/

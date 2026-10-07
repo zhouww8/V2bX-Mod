@@ -1,0 +1,636 @@
+diff -ruN a/protocol/anytls/anytls_user.go b/protocol/anytls/anytls_user.go
+--- a/protocol/anytls/anytls_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/anytls/anytls_user.go	2026-10-07 10:31:25.169806653 +0800
+@@ -0,0 +1,53 @@
++package anytls
++
++import (
++	"net"
++
++	anytls "github.com/anytls/sing-anytls"
++	"github.com/sagernet/sing-box/option"
++)
++
++func (h *Inbound) AddUsers(users []option.AnyTLSUser) error {
++	for _, user := range users {
++		h.uuidlist = append(h.uuidlist, user.Name)
++	}
++	userList := make([]anytls.User, len(h.uuidlist))
++	for i, uuid := range h.uuidlist {
++		userList[i] = anytls.User{Name: uuid, Password: uuid}
++	}
++	h.service.UpdateUsers(userList)
++	return nil
++}
++
++func (h *Inbound) DelUsers(names []string) error {
++	if len(names) == 0 {
++		return nil
++	}
++
++	toDelete := make(map[string]struct{})
++	for _, name := range names {
++		toDelete[name] = struct{}{}
++		h.userconns.Range(func(key, value interface{}) bool {
++			if value.(string) == name {
++				key.(net.Conn).Close()
++				h.userconns.Delete(key)
++			}
++			return true
++		})
++	}
++
++	remaining := make([]string, 0, len(h.uuidlist))
++	for _, uuid := range h.uuidlist {
++		if _, found := toDelete[uuid]; !found {
++			remaining = append(remaining, uuid)
++		}
++	}
++
++	h.uuidlist = remaining
++	userList := make([]anytls.User, len(h.uuidlist))
++	for i, uuid := range h.uuidlist {
++		userList[i] = anytls.User{Name: uuid, Password: uuid}
++	}
++	h.service.UpdateUsers(userList)
++	return nil
++}
+diff -ruN a/protocol/anytls/inbound.go b/protocol/anytls/inbound.go
+--- a/protocol/anytls/inbound.go	2026-10-07 10:31:24.328492689 +0800
++++ b/protocol/anytls/inbound.go	2026-10-07 10:31:25.164809497 +0800
+@@ -4,6 +4,7 @@
+ 	"context"
+ 	"net"
+ 	"strings"
++	"sync"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/inbound"
+@@ -35,6 +36,8 @@
+ 	logger    logger.ContextLogger
+ 	listener  *listener.Listener
+ 	service   *anytls.Service
++	userconns sync.Map
++	uuidlist  []string
+ }
+ 
+ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.AnyTLSInboundOptions) (adapter.Inbound, error) {
+@@ -106,6 +109,10 @@
+ 		}
+ 		conn = tlsConn
+ 	}
++	h.userconns.Store(conn, metadata.User)
++	onClose = N.AppendClose(onClose, func(err error) {
++		h.userconns.Delete(conn)
++	})
+ 	err := h.service.NewConnection(adapter.WithContext(ctx, &metadata), conn, metadata.Source, onClose)
+ 	if err != nil {
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+diff -ruN a/protocol/hysteria/hysteria_user.go b/protocol/hysteria/hysteria_user.go
+--- a/protocol/hysteria/hysteria_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/hysteria/hysteria_user.go	2026-10-07 10:31:25.206418411 +0800
+@@ -0,0 +1,37 @@
++package hysteria
++
++import "github.com/sagernet/sing-box/option"
++
++func (h *Inbound) AddUsers(users []option.HysteriaUser) error {
++	for _, user := range users {
++		h.userNameList = append(h.userNameList, user.AuthString)
++	}
++	indexs := make([]int, len(h.userNameList))
++	for i := range h.userNameList {
++		indexs[i] = i
++	}
++	h.service.UpdateUsers(indexs, h.userNameList)
++	return nil
++}
++func (h *Inbound) DelUsers(names []string) error {
++	if len(names) == 0 {
++		return nil
++	}
++	toDelete := make(map[string]struct{})
++	for _, name := range names {
++		toDelete[name] = struct{}{}
++	}
++	remaining := make([]string, 0, len(h.userNameList))
++	for _, user := range h.userNameList {
++		if _, found := toDelete[user]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++	h.userNameList = remaining
++	indexs := make([]int, len(h.userNameList))
++	for i := range h.userNameList {
++		indexs[i] = i
++	}
++	h.service.UpdateUsers(indexs, h.userNameList)
++	return nil
++}
+diff -ruN a/protocol/hysteria2/hysteria2_user.go b/protocol/hysteria2/hysteria2_user.go
+--- a/protocol/hysteria2/hysteria2_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/hysteria2/hysteria2_user.go	2026-10-07 10:31:25.215520253 +0800
+@@ -0,0 +1,58 @@
++package hysteria2
++
++import (
++	"net"
++
++	"github.com/sagernet/sing-box/option"
++)
++
++func (h *Inbound) AddUsers(users []option.Hysteria2User, ids []int) error {
++	for i, user := range users {
++		h.userNameList = append(h.userNameList, user.Password)
++		h.uuidToUid[user.Password] = ids[i]
++		h.uidToUuid[ids[i]] = user.Password
++	}
++
++	indexs := make([]int, len(h.userNameList))
++	for i, uuid := range h.userNameList {
++		indexs[i] = h.uuidToUid[uuid]
++	}
++
++	h.service.UpdateUsers(indexs, h.userNameList)
++	return nil
++}
++
++func (h *Inbound) DelUsers(names []string) error {
++	if len(names) == 0 {
++		return nil
++	}
++
++	toDelete := make(map[string]struct{})
++	for _, name := range names {
++		toDelete[name] = struct{}{}
++		delete(h.uidToUuid, h.uuidToUid[name])
++		delete(h.uuidToUid, name)
++		h.userconns.Range(func(key, value interface{}) bool {
++			if value.(string) == name {
++				key.(net.Conn).Close()
++				h.userconns.Delete(key)
++			}
++			return true
++		})
++	}
++
++	remaining := make([]string, 0, len(h.userNameList))
++	for _, user := range h.userNameList {
++		if _, found := toDelete[user]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++
++	h.userNameList = remaining
++	indexs := make([]int, len(h.userNameList))
++	for i, uuid := range h.userNameList {
++		indexs[i] = h.uuidToUid[uuid]
++	}
++	h.service.UpdateUsers(indexs, h.userNameList)
++	return nil
++}
+diff -ruN a/protocol/hysteria2/inbound.go b/protocol/hysteria2/inbound.go
+--- a/protocol/hysteria2/inbound.go	2026-10-07 10:31:24.360057706 +0800
++++ b/protocol/hysteria2/inbound.go	2026-10-07 10:31:25.207643959 +0800
+@@ -8,6 +8,7 @@
+ 	"net/netip"
+ 	"net/url"
+ 	"os"
++	"sync"
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+@@ -43,6 +44,9 @@
+ 	tlsConfig    tls.ServerConfig
+ 	service      *hysteria2.Service[int]
+ 	userNameList []string
++	uidToUuid    map[int]string
++	uuidToUid    map[string]int
++	userconns    sync.Map
+ }
+ 
+ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.Hysteria2InboundOptions) (adapter.Inbound, error) {
+@@ -222,6 +226,9 @@
+ 	hysteriaService.UpdateUsers(userList, userPasswordList)
+ 	inbound.service = hysteriaService
+ 	inbound.userNameList = userNameList
++	inbound.uidToUuid = make(map[int]string, len(options.Users))
++	inbound.uuidToUid = make(map[string]int, len(options.Users))
++	inbound.userconns = sync.Map{}
+ 	return inbound, nil
+ }
+ 
+diff -ruN a/protocol/shadowsocks/shadowsocks_user.go b/protocol/shadowsocks/shadowsocks_user.go
+--- a/protocol/shadowsocks/shadowsocks_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/shadowsocks/shadowsocks_user.go	2026-10-07 10:31:25.242753212 +0800
+@@ -0,0 +1,35 @@
++package shadowsocks
++
++import (
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *MultiInbound) AddUsers(users []option.ShadowsocksUser) error {
++	h.users = append(h.users, users...)
++	err := h.service.UpdateUsersWithPasswords(common.MapIndexed(h.users, func(index int, user option.ShadowsocksUser) int {
++		return index
++	}), common.Map(h.users, func(user option.ShadowsocksUser) string {
++		return user.Password
++	}))
++	return err
++}
++func (h *MultiInbound) DelUsers(names []string) error {
++	toDelete := make(map[string]struct{})
++	for _, name := range names {
++		toDelete[name] = struct{}{}
++	}
++	remaining := make([]option.ShadowsocksUser, 0, len(h.users))
++	for _, user := range h.users {
++		if _, found := toDelete[user.Name]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++	h.users = remaining
++	err := h.service.UpdateUsersWithPasswords(common.MapIndexed(h.users, func(index int, user option.ShadowsocksUser) int {
++		return index
++	}), common.Map(h.users, func(user option.ShadowsocksUser) string {
++		return user.Password
++	}))
++	return err
++}
+diff -ruN a/protocol/trojan/inbound.go b/protocol/trojan/inbound.go
+--- a/protocol/trojan/inbound.go	2026-10-07 10:31:24.421023394 +0800
++++ b/protocol/trojan/inbound.go	2026-10-07 10:31:25.280628185 +0800
+@@ -4,6 +4,7 @@
+ 	"context"
+ 	"net"
+ 	"os"
++	"sync"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/inbound"
+@@ -40,6 +41,7 @@
+ 	fallbackAddr             M.Socksaddr
+ 	fallbackAddrTLSNextProto map[string]M.Socksaddr
+ 	transport                adapter.V2RayServerTransport
++	userconns                sync.Map
+ }
+ 
+ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.TrojanInboundOptions) (adapter.Inbound, error) {
+@@ -174,6 +176,10 @@
+ 		}
+ 		conn = tlsConn
+ 	}
++	h.userconns.Store(conn, metadata.User)
++	onClose = N.AppendClose(onClose, func(err error) {
++		h.userconns.Delete(conn)
++	})
+ 	err := h.service.NewConnection(adapter.WithContext(ctx, &metadata), conn, metadata.Source, onClose)
+ 	if err != nil {
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+diff -ruN a/protocol/trojan/trojan_user.go b/protocol/trojan/trojan_user.go
+--- a/protocol/trojan/trojan_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/trojan/trojan_user.go	2026-10-07 10:31:25.282240593 +0800
+@@ -0,0 +1,44 @@
++package trojan
++
++import (
++	"net"
++
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) AddUsers(users []option.TrojanUser) error {
++	h.users = append(h.users, users...)
++	err := h.service.UpdateUsers(common.MapIndexed(h.users, func(index int, user option.TrojanUser) int {
++		return index
++	}), common.Map(h.users, func(user option.TrojanUser) string {
++		return user.Password
++	}))
++	return err
++}
++func (h *Inbound) DelUsers(names []string) error {
++	nameMap := make(map[string]struct{}, len(names))
++	for _, name := range names {
++		h.userconns.Range(func(key, value interface{}) bool {
++			if value.(string) == name {
++				key.(net.Conn).Close()
++				h.userconns.Delete(key)
++			}
++			return true
++		})
++		nameMap[name] = struct{}{}
++	}
++	filteredUsers := make([]option.TrojanUser, 0, len(h.users))
++	for _, user := range h.users {
++		if _, found := nameMap[user.Name]; !found {
++			filteredUsers = append(filteredUsers, user)
++		}
++	}
++	h.users = filteredUsers
++	err := h.service.UpdateUsers(common.MapIndexed(h.users, func(index int, user option.TrojanUser) int {
++		return index
++	}), common.Map(h.users, func(user option.TrojanUser) string {
++		return user.Password
++	}))
++	return err
++}
+diff -ruN a/protocol/tuic/inbound.go b/protocol/tuic/inbound.go
+--- a/protocol/tuic/inbound.go	2026-10-07 10:31:24.422492688 +0800
++++ b/protocol/tuic/inbound.go	2026-10-07 10:31:25.283712010 +0800
+@@ -3,6 +3,7 @@
+ import (
+ 	"context"
+ 	"net"
++	"sync"
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+@@ -36,6 +37,9 @@
+ 	tlsConfig    tls.ServerConfig
+ 	server       *tuic.Service[int]
+ 	userNameList []string
++	uidToUuid    map[int]string
++	uuidToUid    map[string]int
++	userconns    sync.Map
+ }
+ 
+ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.TUICInboundOptions) (adapter.Inbound, error) {
+@@ -91,6 +95,8 @@
+ 	var userNameList []string
+ 	var userUUIDList [][16]byte
+ 	var userPasswordList []string
++	uidToUuid := make(map[int]string, len(options.Users))
++	uuidToUid := make(map[string]int, len(options.Users))
+ 	for index, user := range options.Users {
+ 		if user.UUID == "" {
+ 			return nil, E.New("missing uuid for user ", index)
+@@ -107,6 +113,9 @@
+ 	service.UpdateUsers(userList, userUUIDList, userPasswordList)
+ 	inbound.server = service
+ 	inbound.userNameList = userNameList
++	inbound.uidToUuid = uidToUuid
++	inbound.uuidToUid = uuidToUid
++	inbound.userconns = sync.Map{}
+ 	return inbound, nil
+ }
+ 
+@@ -123,9 +132,17 @@
+ 	metadata.Destination = destination
+ 	h.logger.InfoContext(ctx, "inbound connection from ", metadata.Source)
+ 	userID, _ := auth.UserFromContext[int](ctx)
+-	if userName := h.userNameList[userID]; userName != "" {
+-		metadata.User = userName
+-		h.logger.InfoContext(ctx, "[", userName, "] inbound connection to ", metadata.Destination)
++	if userName, found := h.uidToUuid[userID]; found {
++		if userName != "" {
++			metadata.User = userName
++			h.userconns.LoadOrStore(conn, userName)
++			onClose = N.AppendClose(onClose, func(err error) {
++				h.userconns.Delete(conn)
++			})
++			h.logger.InfoContext(ctx, "[", userName, "] inbound connection to ", metadata.Destination)
++		} else {
++			h.logger.InfoContext(ctx, "inbound connection to ", metadata.Destination)
++		}
+ 	} else {
+ 		h.logger.InfoContext(ctx, "inbound connection to ", metadata.Destination)
+ 	}
+@@ -145,9 +162,17 @@
+ 	metadata.Destination = destination
+ 	h.logger.InfoContext(ctx, "inbound packet connection from ", metadata.Source)
+ 	userID, _ := auth.UserFromContext[int](ctx)
+-	if userName := h.userNameList[userID]; userName != "" {
+-		metadata.User = userName
+-		h.logger.InfoContext(ctx, "[", userName, "] inbound packet connection to ", metadata.Destination)
++	if userName, found := h.uidToUuid[userID]; found {
++		if userName != "" {
++			metadata.User = userName
++			h.userconns.LoadOrStore(conn, userName)
++			onClose = N.AppendClose(onClose, func(err error) {
++				h.userconns.Delete(conn)
++			})
++			h.logger.InfoContext(ctx, "[", userName, "] inbound packet connection to ", metadata.Destination)
++		} else {
++			h.logger.InfoContext(ctx, "inbound packet connection to ", metadata.Destination)
++		}
+ 	} else {
+ 		h.logger.InfoContext(ctx, "inbound packet connection to ", metadata.Destination)
+ 	}
+diff -ruN a/protocol/tuic/tuic_user.go b/protocol/tuic/tuic_user.go
+--- a/protocol/tuic/tuic_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/tuic/tuic_user.go	2026-10-07 10:31:25.285563678 +0800
+@@ -0,0 +1,66 @@
++package tuic
++
++import (
++	"net"
++
++	"github.com/gofrs/uuid/v5"
++	"github.com/sagernet/sing-box/option"
++	E "github.com/sagernet/sing/common/exceptions"
++)
++
++func (h *Inbound) AddUsers(users []option.TUICUser, ids []int) error {
++	for i, user := range users {
++		h.userNameList = append(h.userNameList, user.Name)
++		h.uuidToUid[user.UUID] = ids[i]
++		h.uidToUuid[ids[i]] = user.UUID
++	}
++	var userUUIDList [][16]byte
++	indexs := make([]int, len(h.userNameList))
++	for i, UUID := range h.userNameList {
++		indexs[i] = h.uuidToUid[UUID]
++		userUUID, err := uuid.FromString(UUID)
++		if err != nil {
++			return E.Cause(err, "invalid uuid for user ", i)
++		}
++		userUUIDList = append(userUUIDList, userUUID)
++	}
++	h.server.UpdateUsers(indexs, userUUIDList, h.userNameList)
++	return nil
++}
++func (h *Inbound) DelUsers(names []string) error {
++	if len(names) == 0 {
++		return nil
++	}
++	toDelete := make(map[string]struct{})
++	for _, name := range names {
++		toDelete[name] = struct{}{}
++		delete(h.uidToUuid, h.uuidToUid[name])
++		delete(h.uuidToUid, name)
++		h.userconns.Range(func(key, value interface{}) bool {
++			if value.(string) == name {
++				key.(net.Conn).Close()
++				h.userconns.Delete(key)
++			}
++			return true
++		})
++	}
++	remaining := make([]string, 0, len(h.userNameList))
++	for _, user := range h.userNameList {
++		if _, found := toDelete[user]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++	h.userNameList = remaining
++	var userUUIDList [][16]byte
++	indexs := make([]int, len(h.userNameList))
++	for i, UUID := range h.userNameList {
++		indexs[i] = h.uuidToUid[UUID]
++		userUUID, err := uuid.FromString(UUID)
++		if err != nil {
++			return E.Cause(err, "invalid uuid for user ", i)
++		}
++		userUUIDList = append(userUUIDList, userUUID)
++	}
++	h.server.UpdateUsers(indexs, userUUIDList, h.userNameList)
++	return nil
++}
+diff -ruN a/protocol/vless/inbound.go b/protocol/vless/inbound.go
+--- a/protocol/vless/inbound.go	2026-10-07 10:31:24.426874210 +0800
++++ b/protocol/vless/inbound.go	2026-10-07 10:31:25.289087984 +0800
+@@ -4,6 +4,7 @@
+ 	"context"
+ 	"net"
+ 	"os"
++	"sync"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/inbound"
+@@ -43,6 +44,7 @@
+ 	service   *vless.Service[int]
+ 	tlsConfig tls.ServerConfig
+ 	transport adapter.V2RayServerTransport
++	userconns sync.Map
+ }
+ 
+ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.VLESSInboundOptions) (adapter.Inbound, error) {
+@@ -157,6 +159,10 @@
+ 		}
+ 		conn = tlsConn
+ 	}
++	h.userconns.Store(conn, metadata.User)
++	onClose = N.AppendClose(onClose, func(err error) {
++		h.userconns.Delete(conn)
++	})
+ 	err := h.service.NewConnection(adapter.WithContext(ctx, &metadata), conn, metadata.Source, onClose)
+ 	if err != nil {
+ 		N.CloseOnHandshakeFailure(conn, onClose, err)
+diff -ruN a/protocol/vless/vless_user.go b/protocol/vless/vless_user.go
+--- a/protocol/vless/vless_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/vless/vless_user.go	2026-10-07 10:31:25.290979371 +0800
+@@ -0,0 +1,56 @@
++package vless
++
++import (
++	"net"
++
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) AddUsers(users []option.VLESSUser) error {
++	h.users = append(h.users, users...)
++	h.service.UpdateUsers(
++		common.MapIndexed(h.users, func(index int, it option.VLESSUser) int {
++			return index
++		}),
++		common.Map(h.users, func(it option.VLESSUser) string {
++			return it.UUID
++		}),
++		common.Map(h.users, func(it option.VLESSUser) string {
++			return it.Flow
++		}),
++	)
++	return nil
++}
++func (h *Inbound) DelUsers(names []string) error {
++	toDelete := make(map[string]struct{})
++	for _, name := range names {
++		h.userconns.Range(func(key, value interface{}) bool {
++			if value.(string) == name {
++				key.(net.Conn).Close()
++				h.userconns.Delete(key)
++			}
++			return true
++		})
++		toDelete[name] = struct{}{}
++	}
++	remaining := make([]option.VLESSUser, 0)
++	for _, user := range h.users {
++		if _, found := toDelete[user.Name]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++	h.users = remaining
++	h.service.UpdateUsers(
++		common.MapIndexed(h.users, func(index int, it option.VLESSUser) int {
++			return index
++		}),
++		common.Map(h.users, func(it option.VLESSUser) string {
++			return it.UUID
++		}),
++		common.Map(h.users, func(it option.VLESSUser) string {
++			return it.Flow
++		}),
++	)
++	return nil
++}
+diff -ruN a/protocol/vmess/vmess_user.go b/protocol/vmess/vmess_user.go
+--- a/protocol/vmess/vmess_user.go	1970-01-01 08:00:00.000000000 +0800
++++ b/protocol/vmess/vmess_user.go	2026-10-07 10:31:25.295366322 +0800
+@@ -0,0 +1,51 @@
++package vmess
++
++import (
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) AddUsers(users []option.VMessUser) error {
++	h.users = append(h.users, users...)
++	err := h.service.UpdateUsers(
++		common.MapIndexed(h.users, func(index int, it option.VMessUser) int {
++			return index
++		}),
++		common.Map(h.users, func(it option.VMessUser) string {
++			return it.UUID
++		}),
++		common.Map(h.users, func(it option.VMessUser) int {
++			return it.AlterId
++		}))
++	if err != nil {
++		return err
++	}
++	return nil
++}
++func (h *Inbound) DelUsers(uuids []string) error {
++	toDelete := make(map[string]struct{})
++	for _, uuid := range uuids {
++		toDelete[uuid] = struct{}{}
++	}
++	remaining := make([]option.VMessUser, 0)
++	for _, user := range h.users {
++		if _, found := toDelete[user.Name]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++	h.users = remaining
++	err := h.service.UpdateUsers(
++		common.MapIndexed(h.users, func(index int, it option.VMessUser) int {
++			return index
++		}),
++		common.Map(h.users, func(it option.VMessUser) string {
++			return it.UUID
++		}),
++		common.Map(h.users, func(it option.VMessUser) int {
++			return it.AlterId
++		}))
++	if err != nil {
++		return err
++	}
++	return nil
++}

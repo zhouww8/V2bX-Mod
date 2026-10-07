@@ -15,6 +15,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing-tun"
 )
 
 var _ adapter.ConnectionTracker = (*HookServer)(nil)
@@ -73,6 +74,12 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 	}
 	conn = counter.NewConnCounter(conn, t.GetCounter(m.User))
 	return conn
+}
+
+func (h *HookServer) RoutedFlow(_ context.Context, _ adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) tun.FlowTracker {
+	// Flow-level tracking is not needed; connection/packet tracking above is sufficient.
+	// Returning nil is explicitly handled by the router.
+	return nil
 }
 
 func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule, _ adapter.Outbound) N.PacketConn {
