@@ -1,4 +1,6 @@
-# V2bX
+# V2bX-Mod（v2bx二改）
+
+> 本项目改自 [wyx2685/V2bX](https://github.com/wyx2685/V2bX)，主要变更：升级 hysteria2 / sing-box / xray-core 到最新稳定版。面板对接（v2board）逻辑未动。
 
 [![](https://img.shields.io/badge/TgChat-UnOfficialV2Board%E4%BA%A4%E6%B5%81%E7%BE%A4-green)](https://t.me/unofficialV2board)
 [![](https://img.shields.io/badge/TgChat-YuzukiProjects%E4%BA%A4%E6%B5%81%E7%BE%A4-blue)](https://t.me/YuzukiProjects)
